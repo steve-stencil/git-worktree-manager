@@ -1,0 +1,830 @@
+#!/bin/bash
+# wt - Git Worktree Manager
+# A universal CLI tool for managing git worktrees across any project
+#
+# Installation:
+#   1. Save this file to ~/.local/bin/wt
+#   2. chmod +x ~/.local/bin/wt
+#   3. Add to PATH: echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
+#   4. source ~/.zshrc
+#
+# Usage:
+#   wt list                     - List all worktrees with status
+#   wt create <name> [branch]   - Create a new worktree
+#   wt switch <name>            - Set up worktree and open in editor
+#   wt remove <name>            - Remove a worktree
+#   wt status                   - Show detailed status table
+#   wt ports                    - Show what's running on dev ports
+#   wt cd <name>                - Print path to worktree (use with: cd $(wt cd name))
+#
+# Configuration (optional ~/.wtconfig):
+#   EDITOR_CMD="cursor"         - Editor to open worktrees with
+#   BASE_API_PORT=4000          - Starting port for API servers
+#   BASE_WEB_PORT=5173          - Starting port for web servers
+#   ENV_FILES=("apps/api/.env" "apps/web/.env")  - Env files to configure
+
+set -e
+
+VERSION="1.1.0"
+
+# Colors for output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+DIM='\033[2m'
+NC='\033[0m' # No Color
+
+# Default configuration
+EDITOR_CMD="${EDITOR_CMD:-cursor}"
+BASE_API_PORT="${BASE_API_PORT:-4000}"
+BASE_WEB_PORT="${BASE_WEB_PORT:-5173}"
+
+# Load user config if exists
+if [ -f "$HOME/.wtconfig" ]; then
+    # shellcheck source=/dev/null
+    source "$HOME/.wtconfig"
+fi
+
+# ============================================================================
+# Core Functions
+# ============================================================================
+
+# Find the git root of the current directory
+find_git_root() {
+    git rev-parse --show-toplevel 2>/dev/null || {
+        echo -e "${RED}Error: Not in a git repository${NC}" >&2
+        echo -e "${DIM}Run this command from within a git repository${NC}" >&2
+        exit 1
+    }
+}
+
+# Find the main worktree (first entry is always the main one)
+find_main_worktree() {
+    local current_repo="$1"
+    git -C "$current_repo" worktree list --porcelain | head -1 | cut -d' ' -f2-
+}
+
+# Get repository name from path
+get_repo_name() {
+    basename "$1"
+}
+
+# Get parent directory
+get_parent_dir() {
+    dirname "$1"
+}
+
+# Get list of all worktree paths
+get_worktree_paths() {
+    local main_project="$1"
+    git -C "$main_project" worktree list --porcelain | grep "^worktree " | cut -d' ' -f2-
+}
+
+# Check if a path is the main worktree
+is_main_worktree() {
+    local path="$1"
+    local main="$2"
+    [ "$path" = "$main" ]
+}
+
+# Check if worktree has env files
+check_env_status() {
+    local worktree_path="$1"
+    local has_env=false
+    
+    # Check common env file locations
+    for env_loc in ".env" "apps/api/.env" "apps/web/.env" "packages/api/.env"; do
+        if [ -f "$worktree_path/$env_loc" ] || [ -L "$worktree_path/$env_loc" ]; then
+            has_env=true
+            break
+        fi
+    done
+    
+    if $has_env; then
+        echo "✅"
+    else
+        echo "❌"
+    fi
+}
+
+# Check if node_modules exist
+check_deps_status() {
+    local worktree_path="$1"
+    
+    if [ -d "$worktree_path/node_modules" ]; then
+        echo "✅"
+    else
+        echo "❌"
+    fi
+}
+
+# Print formatted header
+print_header() {
+    echo ""
+    echo -e "${BOLD}${BLUE}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${BOLD}${BLUE}  $1${NC}"
+    echo -e "${BOLD}${BLUE}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+}
+
+# Print section header
+print_section() {
+    echo -e "\n${CYAN}── $1 ──${NC}\n"
+}
+
+# ============================================================================
+# Command: list
+# ============================================================================
+
+cmd_list() {
+    local current_repo
+    current_repo=$(find_git_root)
+    local main_project
+    main_project=$(find_main_worktree "$current_repo")
+    local repo_name
+    repo_name=$(get_repo_name "$main_project")
+    
+    print_header "Git Worktrees for $repo_name"
+    
+    echo -e "${BOLD}Main Project:${NC}"
+    echo -e "  📁 $main_project"
+    echo ""
+    
+    echo -e "${BOLD}Available Worktrees:${NC}"
+    echo ""
+    
+    local worktrees
+    worktrees=$(git -C "$main_project" worktree list)
+    
+    while IFS= read -r line; do
+        local path branch
+        path=$(echo "$line" | awk '{print $1}')
+        branch=$(echo "$line" | awk '{print $3}' | tr -d '[]')
+        
+        if [ "$path" = "$main_project" ]; then
+            echo -e "  ${GREEN}● MAIN${NC} ($branch)"
+            echo -e "    Path: $path"
+        else
+            local name env_status deps_status
+            name=$(basename "$path")
+            # Strip repo name prefix if present
+            name=${name#"${repo_name}-"}
+            env_status=$(check_env_status "$path")
+            deps_status=$(check_deps_status "$path")
+            
+            echo -e "  ${YELLOW}○ $name${NC}"
+            echo -e "    Branch: $branch"
+            echo -e "    Path: $path"
+            echo -e "    Env: $env_status  Deps: $deps_status"
+        fi
+        echo ""
+    done <<< "$worktrees"
+    
+    echo -e "${CYAN}Tip: Use 'wt switch <name>' to set up and open a worktree${NC}"
+}
+
+# ============================================================================
+# Command: status
+# ============================================================================
+
+cmd_status() {
+    local current_repo
+    current_repo=$(find_git_root)
+    local main_project
+    main_project=$(find_main_worktree "$current_repo")
+    
+    print_header "Worktree Status Overview"
+    
+    printf "%-15s %-25s %-6s %-6s %-20s\n" "NAME" "BRANCH" "ENV" "DEPS" "LAST MODIFIED"
+    printf "%-15s %-25s %-6s %-6s %-20s\n" "────" "──────" "───" "────" "─────────────"
+    
+    local worktrees
+    worktrees=$(git -C "$main_project" worktree list)
+    
+    while IFS= read -r line; do
+        local path branch name env_status deps_status last_mod
+        path=$(echo "$line" | awk '{print $1}')
+        branch=$(echo "$line" | awk '{print $3}' | tr -d '[]')
+        
+        if [ "$path" = "$main_project" ]; then
+            name="MAIN"
+        else
+            name=$(basename "$path")
+            local repo_name
+            repo_name=$(get_repo_name "$main_project")
+            name=${name#"${repo_name}-"}
+        fi
+        
+        env_status=$(check_env_status "$path")
+        deps_status=$(check_deps_status "$path")
+        
+        # Get last modified time (macOS compatible)
+        if [ -d "$path" ]; then
+            last_mod=$(stat -f "%Sm" -t "%Y-%m-%d %H:%M" "$path" 2>/dev/null || echo "unknown")
+        fi
+        
+        printf "%-15s %-25s %-6s %-6s %-20s\n" "${name:0:14}" "${branch:0:24}" "$env_status" "$deps_status" "$last_mod"
+    done <<< "$worktrees"
+}
+
+# ============================================================================
+# Command: create
+# ============================================================================
+
+cmd_create() {
+    local worktree_name="$1"
+    local branch_name="$2"
+    
+    if [ -z "$worktree_name" ]; then
+        echo -e "${RED}Error: Please provide a worktree name${NC}"
+        echo ""
+        echo "Usage: wt create <name> [branch]"
+        echo ""
+        echo "Arguments:"
+        echo "  name    Short name for the worktree (e.g., 'feature-x', 'bugfix')"
+        echo "  branch  Optional: branch to checkout (default: creates new branch)"
+        echo ""
+        echo "Examples:"
+        echo "  wt create myfeature                  # Creates new branch 'worktree/myfeature'"
+        echo "  wt create myfeature feat/existing    # Checks out existing branch"
+        echo "  wt create myfeature -b feat/new      # Creates new branch with custom name"
+        exit 1
+    fi
+    
+    local current_repo
+    current_repo=$(find_git_root)
+    local main_project
+    main_project=$(find_main_worktree "$current_repo")
+    local parent_dir
+    parent_dir=$(get_parent_dir "$main_project")
+    local repo_name
+    repo_name=$(get_repo_name "$main_project")
+    
+    local worktree_path="${parent_dir}/${repo_name}-${worktree_name}"
+    
+    # Check if worktree already exists
+    if [ -d "$worktree_path" ]; then
+        echo -e "${RED}Error: Directory already exists: $worktree_path${NC}"
+        echo ""
+        echo "If you want to use this worktree, run:"
+        echo "  wt switch $worktree_name"
+        exit 1
+    fi
+    
+    print_header "Creating Worktree: $worktree_name"
+    
+    echo -e "📁 Main project: $main_project"
+    echo -e "📁 New worktree: $worktree_path"
+    echo ""
+    
+    # Determine branch handling
+    if [ -z "$branch_name" ]; then
+        branch_name="worktree/$worktree_name"
+        echo -e "Creating worktree with new branch: ${CYAN}$branch_name${NC}"
+        git -C "$main_project" worktree add -b "$branch_name" "$worktree_path"
+    elif [ "$branch_name" = "-b" ]; then
+        echo -e "${RED}Error: -b flag requires a branch name${NC}"
+        exit 1
+    elif [[ "$branch_name" == -b* ]]; then
+        local new_branch="${branch_name:2}"
+        if [ -z "$new_branch" ] && [ -n "$3" ]; then
+            new_branch="$3"
+        fi
+        echo -e "Creating worktree with new branch: ${CYAN}$new_branch${NC}"
+        git -C "$main_project" worktree add -b "$new_branch" "$worktree_path"
+    else
+        echo -e "Creating worktree with existing branch: ${CYAN}$branch_name${NC}"
+        git -C "$main_project" worktree add "$worktree_path" "$branch_name"
+    fi
+    
+    echo ""
+    echo -e "${GREEN}✅ Worktree created!${NC}"
+    echo ""
+    echo -e "${BOLD}Next step - set up and open:${NC}"
+    echo -e "  ${CYAN}wt switch $worktree_name${NC}"
+}
+
+# ============================================================================
+# Command: remove
+# ============================================================================
+
+cmd_remove() {
+    local worktree_name="$1"
+    local force_flag="$2"
+    
+    if [ -z "$worktree_name" ]; then
+        echo -e "${RED}Error: Please provide a worktree name${NC}"
+        echo ""
+        echo "Usage: wt remove <name> [--force]"
+        echo ""
+        echo "Available worktrees:"
+        cmd_list
+        exit 1
+    fi
+    
+    local current_repo
+    current_repo=$(find_git_root)
+    local main_project
+    main_project=$(find_main_worktree "$current_repo")
+    local parent_dir
+    parent_dir=$(get_parent_dir "$main_project")
+    local repo_name
+    repo_name=$(get_repo_name "$main_project")
+    
+    # Find worktree path
+    local worktree_path="${parent_dir}/${repo_name}-${worktree_name}"
+    
+    if [ ! -d "$worktree_path" ]; then
+        # Try finding by exact match in worktree list
+        worktree_path=$(git -C "$main_project" worktree list --porcelain | grep "^worktree " | cut -d' ' -f2- | while read -r p; do
+            if [ "$(basename "$p")" = "${repo_name}-${worktree_name}" ] || [ "$(basename "$p")" = "$worktree_name" ]; then
+                echo "$p"
+                break
+            fi
+        done)
+    fi
+    
+    if [ -z "$worktree_path" ] || [ ! -d "$worktree_path" ]; then
+        echo -e "${RED}Error: Worktree '$worktree_name' not found${NC}"
+        echo ""
+        echo "Available worktrees:"
+        git -C "$main_project" worktree list
+        exit 1
+    fi
+    
+    print_header "Removing Worktree: $worktree_name"
+    
+    echo -e "📁 Path: $worktree_path"
+    echo ""
+    
+    if [ "$force_flag" = "--force" ] || [ "$force_flag" = "-f" ]; then
+        git -C "$main_project" worktree remove "$worktree_path" --force
+    else
+        git -C "$main_project" worktree remove "$worktree_path"
+    fi
+    
+    echo -e "${GREEN}✅ Worktree '$worktree_name' removed${NC}"
+}
+
+# ============================================================================
+# Command: switch
+# ============================================================================
+
+cmd_switch() {
+    local target_name="$1"
+    local skip_editor="${2:-false}"
+    
+    if [ -z "$target_name" ]; then
+        echo -e "${RED}Error: Please provide a worktree name${NC}"
+        echo ""
+        echo "Usage: wt switch <name> [--no-editor]"
+        echo ""
+        echo "This command:"
+        echo "  1. Fixes detached HEAD state (creates branch if needed)"
+        echo "  2. Syncs cursor rules (including gitignored files like credentials.mdc)"
+        echo "  3. Creates .env files with unique ports (if detected)"
+        echo "  4. Installs dependencies (if package.json exists)"
+        echo "  5. Opens in your editor ($EDITOR_CMD)"
+        echo ""
+        echo "Available worktrees:"
+        cmd_list
+        exit 1
+    fi
+    
+    if [ "$2" = "--no-editor" ]; then
+        skip_editor="true"
+    fi
+    
+    local current_repo
+    current_repo=$(find_git_root)
+    local main_project
+    main_project=$(find_main_worktree "$current_repo")
+    local parent_dir
+    parent_dir=$(get_parent_dir "$main_project")
+    local repo_name
+    repo_name=$(get_repo_name "$main_project")
+    
+    # Find target path
+    local target_path=""
+    local port_offset=0
+    
+    if [ "$target_name" = "main" ] || [ "$target_name" = "MAIN" ]; then
+        target_path="$main_project"
+        port_offset=0
+    else
+        local alongside_path="${parent_dir}/${repo_name}-${target_name}"
+        if [ -d "$alongside_path" ]; then
+            target_path="$alongside_path"
+        else
+            # Try to find via git worktree list
+            target_path=$(git -C "$main_project" worktree list --porcelain | grep "^worktree " | cut -d' ' -f2- | while read -r p; do
+                local bn
+                bn=$(basename "$p")
+                if [ "$bn" = "$target_name" ] || [ "$bn" = "${repo_name}-${target_name}" ]; then
+                    echo "$p"
+                    break
+                fi
+            done)
+        fi
+    fi
+    
+    if [ -z "$target_path" ] || [ ! -d "$target_path" ]; then
+        echo -e "${RED}Error: Worktree '$target_name' not found${NC}"
+        echo ""
+        echo "To create a new worktree, run:"
+        echo "  wt create $target_name [branch]"
+        echo ""
+        echo "Available worktrees:"
+        git -C "$main_project" worktree list
+        exit 1
+    fi
+    
+    print_header "Setting Up Worktree: $target_name"
+    
+    echo -e "📂 Target: $target_path"
+    echo ""
+    
+    # =========================================================================
+    # Step 1: Fix detached HEAD state
+    # =========================================================================
+    print_section "Step 1: Checking Git Branch State"
+    
+    cd "$target_path"
+    
+    local current_branch
+    current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "")
+    
+    if [ -z "$current_branch" ]; then
+        echo -e "${YELLOW}⚠ Worktree is in detached HEAD state${NC}"
+        
+        local branch_name="worktree/$target_name"
+        if git show-ref --verify --quiet "refs/heads/$branch_name"; then
+            echo -e "  Branch '$branch_name' exists, checking out..."
+            git checkout "$branch_name"
+        else
+            echo -e "  Creating new branch: $branch_name"
+            git checkout -b "$branch_name"
+        fi
+        echo -e "  ${GREEN}✓ Now on branch: $branch_name${NC}"
+    else
+        echo -e "  ${GREEN}✓ Already on branch: $current_branch${NC}"
+    fi
+    
+    # =========================================================================
+    # Step 2: Calculate port offset for unique ports
+    # =========================================================================
+    if [ "$target_name" != "main" ] && [ "$target_name" != "MAIN" ]; then
+        local worktree_count=0
+        while IFS= read -r wt_path; do
+            if [ "$wt_path" != "$main_project" ]; then
+                worktree_count=$((worktree_count + 1))
+            fi
+            if [ "$wt_path" = "$target_path" ]; then
+                port_offset=$worktree_count
+                break
+            fi
+        done < <(get_worktree_paths "$main_project")
+    fi
+    
+    local api_port=$((BASE_API_PORT + port_offset))
+    local web_port=$((BASE_WEB_PORT + port_offset))
+    
+    # =========================================================================
+    # Step 3: Sync Cursor Rules (including gitignored files like credentials.mdc)
+    # =========================================================================
+    print_section "Step 2: Syncing Cursor Rules"
+    
+    local rules_source="$main_project/.cursor/rules"
+    local rules_target="$target_path/.cursor/rules"
+    
+    if [ -d "$rules_source" ] && [ "$target_path" != "$main_project" ]; then
+        # Ensure target directory exists
+        mkdir -p "$rules_target"
+        
+        # Copy all .mdc files from main to target
+        local copied_count=0
+        local skipped_count=0
+        for rule_file in "$rules_source"/*.mdc; do
+            if [ -f "$rule_file" ]; then
+                local filename
+                filename=$(basename "$rule_file")
+                local target_file="$rules_target/$filename"
+                
+                # Check if file is gitignored (these are the ones we need to sync)
+                if git -C "$main_project" check-ignore "$rule_file" &>/dev/null; then
+                    # Always copy gitignored files (they won't sync via git)
+                    cp "$rule_file" "$target_file"
+                    copied_count=$((copied_count + 1))
+                elif [ ! -f "$target_file" ]; then
+                    # Copy non-gitignored files only if they don't exist
+                    cp "$rule_file" "$target_file"
+                    copied_count=$((copied_count + 1))
+                else
+                    skipped_count=$((skipped_count + 1))
+                fi
+            fi
+        done
+        
+        if [ $copied_count -gt 0 ]; then
+            echo -e "  ${GREEN}✓ Synced $copied_count cursor rule(s) from main${NC}"
+        fi
+        if [ $skipped_count -gt 0 ]; then
+            echo -e "  ${DIM}Skipped $skipped_count rule(s) (already exist via git)${NC}"
+        fi
+        if [ $copied_count -eq 0 ] && [ $skipped_count -eq 0 ]; then
+            echo -e "  ${DIM}No cursor rules found to sync${NC}"
+        fi
+    else
+        echo -e "  ${DIM}Skipping (main worktree or no rules found)${NC}"
+    fi
+    
+    # =========================================================================
+    # Step 4: Set up environment files (if applicable)
+    # =========================================================================
+    print_section "Step 3: Environment Setup"
+    
+    local env_configured=false
+    
+    # Check for common monorepo structures
+    if [ -f "$main_project/apps/api/.env" ]; then
+        # Monorepo with apps/api structure
+        setup_env_file "$main_project/apps/api/.env" "$target_path/apps/api/.env" "$api_port" "$web_port" "api"
+        env_configured=true
+    fi
+    
+    if [ -f "$main_project/apps/web/.env" ]; then
+        setup_env_file "$main_project/apps/web/.env" "$target_path/apps/web/.env" "$api_port" "$web_port" "web"
+        env_configured=true
+    fi
+    
+    # Check for root .env
+    if [ -f "$main_project/.env" ] && [ "$env_configured" = false ]; then
+        setup_env_file "$main_project/.env" "$target_path/.env" "$api_port" "$web_port" "root"
+        env_configured=true
+    fi
+    
+    if [ "$env_configured" = true ]; then
+        echo -e "  ${GREEN}✓ Ports: API=$api_port, Web=$web_port${NC}"
+    else
+        echo -e "  ${DIM}No env files detected to configure${NC}"
+    fi
+    
+    # =========================================================================
+    # Step 5: Install dependencies
+    # =========================================================================
+    print_section "Step 4: Dependencies"
+    
+    if [ -f "$target_path/package.json" ]; then
+        if [ -d "$target_path/node_modules" ]; then
+            echo -e "  ${GREEN}✓ Dependencies already installed${NC}"
+        else
+            echo -e "  Installing dependencies..."
+            if [ -f "$target_path/pnpm-lock.yaml" ]; then
+                (cd "$target_path" && pnpm install)
+            elif [ -f "$target_path/yarn.lock" ]; then
+                (cd "$target_path" && yarn install)
+            else
+                (cd "$target_path" && npm install)
+            fi
+            echo -e "  ${GREEN}✓ Dependencies installed${NC}"
+        fi
+    else
+        echo -e "  ${DIM}No package.json found${NC}"
+    fi
+    
+    # =========================================================================
+    # Step 6: Open in editor
+    # =========================================================================
+    if [ "$skip_editor" != "true" ]; then
+        print_section "Step 5: Opening Editor"
+        
+        if command -v "$EDITOR_CMD" &> /dev/null; then
+            $EDITOR_CMD "$target_path"
+            echo -e "  ${GREEN}✓ Opened in $EDITOR_CMD${NC}"
+        else
+            echo -e "  ${YELLOW}⚠ Editor '$EDITOR_CMD' not found${NC}"
+            echo -e "  ${DIM}Set EDITOR_CMD in ~/.wtconfig or install $EDITOR_CMD${NC}"
+        fi
+    fi
+    
+    # =========================================================================
+    # Done!
+    # =========================================================================
+    echo ""
+    echo -e "${GREEN}════════════════════════════════════════════════════════════${NC}"
+    echo -e "${GREEN}  ✅ Worktree '$target_name' is ready!${NC}"
+    echo -e "${GREEN}════════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${BOLD}Path:${NC} $target_path"
+    echo ""
+    if [ "$env_configured" = true ]; then
+        echo -e "${BOLD}Ports:${NC}"
+        echo -e "  API: ${CYAN}http://localhost:$api_port${NC}"
+        echo -e "  Web: ${CYAN}http://localhost:$web_port${NC}"
+    fi
+    echo ""
+}
+
+# Helper function to set up env files with unique ports
+setup_env_file() {
+    local source_file="$1"
+    local target_file="$2"
+    local api_port="$3"
+    local web_port="$4"
+    local type="$5"
+    
+    local target_dir
+    target_dir=$(dirname "$target_file")
+    
+    # Ensure directory exists
+    mkdir -p "$target_dir"
+    
+    # Remove symlink if exists
+    if [ -L "$target_file" ]; then
+        rm "$target_file"
+    fi
+    
+    # Copy the file
+    cp "$source_file" "$target_file"
+    
+    # Update ports based on type
+    if [ "$type" = "api" ]; then
+        # Update PORT
+        if grep -q "^PORT=" "$target_file"; then
+            sed -i '' "s/^PORT=.*/PORT=$api_port/" "$target_file"
+        fi
+        # Update APP_URL to point to web
+        if grep -q "^APP_URL=" "$target_file"; then
+            sed -i '' "s|^APP_URL=.*|APP_URL=http://localhost:$web_port|" "$target_file"
+        fi
+    elif [ "$type" = "web" ]; then
+        # Update VITE_API_BASE
+        if grep -q "^VITE_API_BASE=" "$target_file"; then
+            sed -i '' "s|^VITE_API_BASE=.*|VITE_API_BASE=http://localhost:$api_port/api|" "$target_file"
+        fi
+        # Update VITE_PORT or PORT
+        if grep -q "^VITE_PORT=" "$target_file"; then
+            sed -i '' "s/^VITE_PORT=.*/VITE_PORT=$web_port/" "$target_file"
+        elif grep -q "^PORT=" "$target_file"; then
+            sed -i '' "s/^PORT=.*/PORT=$web_port/" "$target_file"
+        fi
+    fi
+}
+
+# ============================================================================
+# Command: cd (print path for shell cd)
+# ============================================================================
+
+cmd_cd() {
+    local target_name="$1"
+    
+    if [ -z "$target_name" ]; then
+        echo -e "${RED}Error: Please provide a worktree name${NC}" >&2
+        echo "Usage: cd \$(wt cd <name>)" >&2
+        exit 1
+    fi
+    
+    local current_repo
+    current_repo=$(find_git_root)
+    local main_project
+    main_project=$(find_main_worktree "$current_repo")
+    local parent_dir
+    parent_dir=$(get_parent_dir "$main_project")
+    local repo_name
+    repo_name=$(get_repo_name "$main_project")
+    
+    if [ "$target_name" = "main" ] || [ "$target_name" = "MAIN" ]; then
+        echo "$main_project"
+        return
+    fi
+    
+    local target_path="${parent_dir}/${repo_name}-${target_name}"
+    
+    if [ -d "$target_path" ]; then
+        echo "$target_path"
+    else
+        echo -e "${RED}Error: Worktree '$target_name' not found${NC}" >&2
+        exit 1
+    fi
+}
+
+# ============================================================================
+# Command: ports
+# ============================================================================
+
+cmd_ports() {
+    print_header "Development Ports Status"
+    
+    echo -e "${BOLD}Checking common development ports...${NC}"
+    echo ""
+    
+    local ports=(3000 3001 4000 4001 4002 4003 5173 5174 5175 5176 8080 8081)
+    
+    printf "%-8s %-12s %-40s\n" "PORT" "STATUS" "PROCESS"
+    printf "%-8s %-12s %-40s\n" "────" "──────" "───────"
+    
+    for port in "${ports[@]}"; do
+        local pid
+        pid=$(lsof -ti ":$port" 2>/dev/null | head -1)
+        
+        if [ -n "$pid" ]; then
+            local process
+            process=$(ps -p "$pid" -o comm= 2>/dev/null || echo "unknown")
+            printf "%-8s ${GREEN}%-12s${NC} %-40s\n" "$port" "IN USE" "$process (PID: $pid)"
+        else
+            printf "%-8s ${DIM}%-12s${NC} %-40s\n" "$port" "FREE" "-"
+        fi
+    done
+    
+    echo ""
+    echo -e "${CYAN}Tip: Kill a process with: kill <PID>${NC}"
+    echo ""
+    echo -e "${BOLD}Port Allocation (wt assigns automatically):${NC}"
+    echo -e "  main:       API=$BASE_API_PORT, Web=$BASE_WEB_PORT"
+    echo -e "  worktree 1: API=$((BASE_API_PORT+1)), Web=$((BASE_WEB_PORT+1))"
+    echo -e "  worktree 2: API=$((BASE_API_PORT+2)), Web=$((BASE_WEB_PORT+2))"
+}
+
+# ============================================================================
+# Command: help
+# ============================================================================
+
+cmd_help() {
+    print_header "wt - Git Worktree Manager v$VERSION"
+    
+    echo "Usage: wt <command> [options]"
+    echo ""
+    echo -e "${BOLD}Commands:${NC}"
+    echo -e "  ${CYAN}create${NC} <name> [branch]    Create a new worktree"
+    echo -e "  ${CYAN}switch${NC} <name>            ⭐ Full setup: env, deps, open editor"
+    echo -e "  ${CYAN}remove${NC} <name> [--force]  Remove a worktree"
+    echo -e "  ${CYAN}list${NC}                     List all worktrees"
+    echo -e "  ${CYAN}status${NC}                   Show detailed status table"
+    echo -e "  ${CYAN}ports${NC}                    Show what's running on dev ports"
+    echo -e "  ${CYAN}cd${NC} <name>                Print path (use: cd \$(wt cd name))"
+    echo -e "  ${CYAN}help${NC}                     Show this help message"
+    echo ""
+    echo -e "${BOLD}Quick Start:${NC}"
+    echo -e "  ${DIM}# Create and set up a new worktree${NC}"
+    echo -e "  wt create myfeature"
+    echo -e "  wt switch myfeature"
+    echo ""
+    echo -e "${BOLD}Configuration (~/.wtconfig):${NC}"
+    echo -e "  EDITOR_CMD=\"cursor\"      # Editor to open worktrees"
+    echo -e "  BASE_API_PORT=4000       # Starting API port"
+    echo -e "  BASE_WEB_PORT=5173       # Starting web port"
+    echo ""
+    echo -e "${BOLD}Worktree Location:${NC}"
+    echo "  Worktrees are created alongside the main repo:"
+    echo "  ~/projects/myrepo        (main)"
+    echo "  ~/projects/myrepo-feat   (worktree 'feat')"
+}
+
+# ============================================================================
+# Main Entry Point
+# ============================================================================
+
+main() {
+    local command="${1:-help}"
+    shift || true
+    
+    case "$command" in
+        list|ls|l)
+            cmd_list
+            ;;
+        status|st)
+            cmd_status
+            ;;
+        create|new|c)
+            cmd_create "$@"
+            ;;
+        remove|rm|delete|d)
+            cmd_remove "$@"
+            ;;
+        switch|sw|s)
+            cmd_switch "$@"
+            ;;
+        cd)
+            cmd_cd "$@"
+            ;;
+        ports|p)
+            cmd_ports
+            ;;
+        help|--help|-h|h)
+            cmd_help
+            ;;
+        --version|-v)
+            echo "wt version $VERSION"
+            ;;
+        *)
+            echo -e "${RED}Unknown command: $command${NC}"
+            echo "Run 'wt help' for usage"
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
