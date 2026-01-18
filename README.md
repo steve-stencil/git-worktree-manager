@@ -20,14 +20,14 @@ A universal CLI tool for managing git worktrees across any project. Simplifies t
 ### Quick Install (Recommended)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/git-worktree-manager/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/steve-stencil/git-worktree-manager/main/install.sh | bash
 ```
 
 ### Manual Install via Git
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/git-worktree-manager.git ~/.git-worktree-manager
+git clone https://github.com/steve-stencil/git-worktree-manager.git ~/.git-worktree-manager
 
 # Run the install script
 ~/.git-worktree-manager/install.sh
@@ -44,7 +44,7 @@ chmod +x ~/.local/bin/wt
 mkdir -p ~/.local/bin
 
 # Download the script
-curl -o ~/.local/bin/wt https://raw.githubusercontent.com/YOUR_USERNAME/git-worktree-manager/main/wt
+curl -o ~/.local/bin/wt https://raw.githubusercontent.com/steve-stencil/git-worktree-manager/main/wt
 
 # Make it executable
 chmod +x ~/.local/bin/wt
@@ -185,7 +185,7 @@ git pull
 ./install.sh
 
 # Or re-run the curl install
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/git-worktree-manager/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/steve-stencil/git-worktree-manager/main/install.sh | bash
 ```
 
 ## License

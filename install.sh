@@ -6,7 +6,7 @@
 #   ./install.sh /usr/local/bin  # Install to custom location
 #
 # Or via curl:
-#   curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/git-worktree-manager/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/steve-stencil/git-worktree-manager/main/install.sh | bash
 
 set -e
 
@@ -39,7 +39,7 @@ else
     # Installing via curl - download the script
     echo -e "📥 Downloading wt script..."
     SOURCE_FILE=$(mktemp)
-    curl -fsSL "https://raw.githubusercontent.com/YOUR_USERNAME/git-worktree-manager/main/wt" -o "$SOURCE_FILE"
+    curl -fsSL "https://raw.githubusercontent.com/steve-stencil/git-worktree-manager/main/wt" -o "$SOURCE_FILE"
     CLEANUP_SOURCE=true
 fi
 
