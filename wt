@@ -17,15 +17,14 @@
 #   wt ports                    - Show what's running on dev ports
 #   wt cd <name>                - Print path to worktree (use with: cd $(wt cd name))
 #
-# Configuration (optional ~/.wtconfig):
+# Configuration (optional ~/.wtconfig or .wtconfig in repo root):
 #   EDITOR_CMD="cursor"         - Editor to open worktrees with
 #   BASE_API_PORT=4000          - Starting port for API servers
 #   BASE_WEB_PORT=5173          - Starting port for web servers
-#   ENV_FILES=("apps/api/.env" "apps/web/.env")  - Env files to configure
 
 set -e
 
-VERSION="1.1.0"
+VERSION="3.0.0"
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -42,7 +41,7 @@ EDITOR_CMD="${EDITOR_CMD:-cursor}"
 BASE_API_PORT="${BASE_API_PORT:-4000}"
 BASE_WEB_PORT="${BASE_WEB_PORT:-5173}"
 
-# Load user config if exists
+# Load global user config if exists (~/.wtconfig)
 if [ -f "$HOME/.wtconfig" ]; then
     # shellcheck source=/dev/null
     source "$HOME/.wtconfig"
@@ -59,6 +58,17 @@ find_git_root() {
         echo -e "${DIM}Run this command from within a git repository${NC}" >&2
         exit 1
     }
+}
+
+# Load project-level config from main worktree (overrides global config)
+load_project_config() {
+    local main_project="$1"
+    local project_config="$main_project/.wtconfig"
+    
+    if [ -f "$project_config" ]; then
+        # shellcheck source=/dev/null
+        source "$project_config"
+    fi
 }
 
 # Find the main worktree (first entry is always the main one)
@@ -144,6 +154,7 @@ cmd_list() {
     current_repo=$(find_git_root)
     local main_project
     main_project=$(find_main_worktree "$current_repo")
+    load_project_config "$main_project"
     local repo_name
     repo_name=$(get_repo_name "$main_project")
     
@@ -195,6 +206,9 @@ cmd_status() {
     current_repo=$(find_git_root)
     local main_project
     main_project=$(find_main_worktree "$current_repo")
+    load_project_config "$main_project"
+    local repo_name
+    repo_name=$(get_repo_name "$main_project")
     
     print_header "Worktree Status Overview"
     
@@ -213,8 +227,6 @@ cmd_status() {
             name="MAIN"
         else
             name=$(basename "$path")
-            local repo_name
-            repo_name=$(get_repo_name "$main_project")
             name=${name#"${repo_name}-"}
         fi
         
@@ -258,6 +270,7 @@ cmd_create() {
     current_repo=$(find_git_root)
     local main_project
     main_project=$(find_main_worktree "$current_repo")
+    load_project_config "$main_project"
     local parent_dir
     parent_dir=$(get_parent_dir "$main_project")
     local repo_name
@@ -329,6 +342,7 @@ cmd_remove() {
     current_repo=$(find_git_root)
     local main_project
     main_project=$(find_main_worktree "$current_repo")
+    load_project_config "$main_project"
     local parent_dir
     parent_dir=$(get_parent_dir "$main_project")
     local repo_name
@@ -402,6 +416,7 @@ cmd_switch() {
     current_repo=$(find_git_root)
     local main_project
     main_project=$(find_main_worktree "$current_repo")
+    load_project_config "$main_project"
     local parent_dir
     parent_dir=$(get_parent_dir "$main_project")
     local repo_name
@@ -772,7 +787,11 @@ cmd_help() {
     echo -e "  wt create myfeature"
     echo -e "  wt switch myfeature"
     echo ""
-    echo -e "${BOLD}Configuration (~/.wtconfig):${NC}"
+    echo -e "${BOLD}Configuration:${NC}"
+    echo -e "  ${CYAN}Per-project:${NC} .wtconfig in repo root"
+    echo -e "  ${CYAN}Global:${NC}      ~/.wtconfig"
+    echo ""
+    echo -e "${BOLD}Settings:${NC}"
     echo -e "  EDITOR_CMD=\"cursor\"      # Editor to open worktrees"
     echo -e "  BASE_API_PORT=4000       # Starting API port"
     echo -e "  BASE_WEB_PORT=5173       # Starting web port"

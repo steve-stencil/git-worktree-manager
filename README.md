@@ -115,7 +115,16 @@ wt remove auth-refactor
 
 ## Configuration
 
-Create `~/.wtconfig` to customize behavior:
+Configuration can be set at two levels:
+
+| Location | Purpose |
+|----------|---------|
+| `.wtconfig` (repo root) | Per-project settings |
+| `~/.wtconfig` (global) | Default settings for all repos |
+
+**Per-project config overrides global config.**
+
+### Example Config
 
 ```bash
 # Editor to open worktrees with (default: cursor)
