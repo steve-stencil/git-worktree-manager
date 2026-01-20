@@ -11,3 +11,17 @@ Thumbs.db
 
 # Local config (users should create their own)
 .wtconfig.local
+
+# Build output
+dist/
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Test coverage
+coverage/
+
+# Environment
+.env
+.env.local
