@@ -20,6 +20,5 @@ export * from './core/errors.js';
 export * from './core/config.js';
 export * from './core/git.js';
 export * from './core/worktree.js';
-export * from './core/environment.js';
 export * from './core/ports.js';
-export * from './core/cursor-rules.js';
+export * from './core/hooks.js';

@@ -35,8 +35,9 @@ program
   .command('create <name> [branch]')
   .aliases(['new', 'c'])
   .description('Create a new worktree')
-  .action(async (name: string, branch?: string) => {
-    await runCommand(() => createCommand(name, branch, process.cwd()));
+  .option('--no-hooks', 'Skip running post-create hooks')
+  .action(async (name: string, branch: string | undefined, options: { noHooks?: boolean }) => {
+    await runCommand(() => createCommand(name, branch, options, process.cwd()));
   });
 
 program
@@ -44,7 +45,8 @@ program
   .aliases(['sw', 's'])
   .description('Set up worktree and open in editor')
   .option('--no-editor', 'Skip opening editor')
-  .action(async (name: string, options: { noEditor?: boolean }) => {
+  .option('--no-hooks', 'Skip running post-switch hooks')
+  .action(async (name: string, options: { noEditor?: boolean; noHooks?: boolean }) => {
     await runCommand(() => switchCommand(name, options, process.cwd()));
   });
 
@@ -53,7 +55,8 @@ program
   .aliases(['rm', 'd', 'delete'])
   .description('Remove a worktree')
   .option('-f, --force', 'Force removal')
-  .action(async (name: string, options: { force?: boolean }) => {
+  .option('--no-hooks', 'Skip running pre-remove hooks')
+  .action(async (name: string, options: { force?: boolean; noHooks?: boolean }) => {
     await runCommand(() => removeCommand(name, options, process.cwd()));
   });
 
