@@ -1,6 +1,6 @@
 {
   "name": "git-worktree-manager",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Git worktree manager with CLI and MCP server interfaces",
   "type": "module",
   "main": "./dist/index.js",

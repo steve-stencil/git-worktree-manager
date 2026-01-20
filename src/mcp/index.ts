@@ -15,8 +15,7 @@ import { listWorktrees, createWorktree, removeWorktree, getWorktreeByName } from
 import { findMainWorktree, getRepoName } from '../core/git.js';
 import { getAllPortStatuses } from '../core/ports.js';
 import { isWorktreeError } from '../core/errors.js';
-
-const VERSION = '1.0.0';
+import { VERSION } from '../index.js';
 
 /**
  * MCP tool definitions

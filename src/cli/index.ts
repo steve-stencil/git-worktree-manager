@@ -14,8 +14,7 @@ import { portsCommand } from './commands/ports.js';
 import { cdCommand } from './commands/cd.js';
 import { printError } from './formatter.js';
 import { isWorktreeError } from '../core/errors.js';
-
-const VERSION = '1.0.0';
+import { VERSION } from '../index.js';
 
 const program = new Command();
 

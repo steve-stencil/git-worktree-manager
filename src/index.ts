@@ -6,7 +6,13 @@
  * @packageDocumentation
  */
 
-export const VERSION = '1.0.0';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const packageJson = require('../package.json') as { version: string };
+
+/** Package version from package.json */
+export const VERSION: string = packageJson.version;
 
 // Core exports
 export * from './core/types.js';
