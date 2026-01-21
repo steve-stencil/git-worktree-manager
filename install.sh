@@ -1,12 +1,11 @@
 #!/bin/bash
-# install.sh - Install the wt (Git Worktree Manager) tool
+# install.sh - Install the wt (Git Worktree Manager) CLI tool
+#
+# This installs the TypeScript CLI globally using npm/pnpm.
 #
 # Usage:
-#   ./install.sh              # Install to ~/.local/bin (default)
-#   ./install.sh /usr/local/bin  # Install to custom location
-#
-# Or via curl:
-#   curl -fsSL https://raw.githubusercontent.com/steve-stencil/git-worktree-manager/main/install.sh | bash
+#   ./install.sh           # Install globally
+#   ./install.sh --link    # Use symlink (for development)
 
 set -e
 
@@ -18,10 +17,6 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-# Default install location
-INSTALL_DIR="${1:-$HOME/.local/bin}"
-SCRIPT_NAME="wt"
-
 echo ""
 echo -e "${BOLD}${CYAN}════════════════════════════════════════════════════════════${NC}"
 echo -e "${BOLD}${CYAN}  Installing wt - Git Worktree Manager${NC}"
@@ -30,75 +25,79 @@ echo ""
 
 # Determine script source location
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
-if [ -f "$SCRIPT_DIR/wt" ]; then
-    # Installing from cloned repo
-    SOURCE_FILE="$SCRIPT_DIR/wt"
-    echo -e "📁 Source: ${CYAN}$SOURCE_FILE${NC}"
+# Check for package.json (must be run from repo)
+if [ ! -f "package.json" ]; then
+    echo -e "${RED}Error: package.json not found${NC}"
+    echo "Please run this script from the git-worktree-manager repository root."
+    exit 1
+fi
+
+# Detect package manager
+if command -v pnpm &> /dev/null; then
+    PKG_MGR="pnpm"
+elif command -v npm &> /dev/null; then
+    PKG_MGR="npm"
 else
-    # Installing via curl - download the script
-    echo -e "📥 Downloading wt script..."
-    SOURCE_FILE=$(mktemp)
-    curl -fsSL "https://raw.githubusercontent.com/steve-stencil/git-worktree-manager/main/wt" -o "$SOURCE_FILE"
-    CLEANUP_SOURCE=true
+    echo -e "${RED}Error: npm or pnpm is required${NC}"
+    exit 1
 fi
 
-# Create install directory if it doesn't exist
-if [ ! -d "$INSTALL_DIR" ]; then
-    echo -e "📂 Creating directory: ${CYAN}$INSTALL_DIR${NC}"
-    mkdir -p "$INSTALL_DIR"
+echo -e "📦 Using package manager: ${CYAN}$PKG_MGR${NC}"
+echo ""
+
+# Install dependencies
+echo -e "📥 Installing dependencies..."
+$PKG_MGR install
+echo ""
+
+# Build
+echo -e "🔨 Building TypeScript..."
+$PKG_MGR run build
+echo ""
+
+# Install globally
+if [ "$1" = "--link" ]; then
+    echo -e "🔗 Linking globally (development mode)..."
+    $PKG_MGR link --global
+else
+    echo -e "📦 Installing globally..."
+    if [ "$PKG_MGR" = "pnpm" ]; then
+        pnpm add -g "file:$SCRIPT_DIR"
+    else
+        npm install -g "$SCRIPT_DIR"
+    fi
 fi
 
-# Copy the script
-echo -e "📋 Installing to: ${CYAN}$INSTALL_DIR/$SCRIPT_NAME${NC}"
-cp "$SOURCE_FILE" "$INSTALL_DIR/$SCRIPT_NAME"
-chmod +x "$INSTALL_DIR/$SCRIPT_NAME"
-
-# Cleanup if we downloaded
-if [ "${CLEANUP_SOURCE:-false}" = true ]; then
-    rm -f "$SOURCE_FILE"
-fi
-
-# Check if install dir is in PATH
-if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
-    echo ""
-    echo -e "${YELLOW}⚠️  $INSTALL_DIR is not in your PATH${NC}"
-    echo ""
-    echo -e "Add it to your shell config:"
-    echo ""
-    
-    # Detect shell
-    SHELL_NAME=$(basename "$SHELL")
-    case "$SHELL_NAME" in
-        zsh)
-            echo -e "  ${CYAN}echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.zshrc${NC}"
-            echo -e "  ${CYAN}source ~/.zshrc${NC}"
-            ;;
-        bash)
-            echo -e "  ${CYAN}echo 'export PATH=\"$INSTALL_DIR:\$PATH\"' >> ~/.bashrc${NC}"
-            echo -e "  ${CYAN}source ~/.bashrc${NC}"
-            ;;
-        *)
-            echo -e "  ${CYAN}export PATH=\"$INSTALL_DIR:\$PATH\"${NC}"
-            ;;
-    esac
-    echo ""
-fi
+echo ""
 
 # Verify installation
-if command -v wt &> /dev/null || [ -x "$INSTALL_DIR/$SCRIPT_NAME" ]; then
-    echo ""
+if command -v wt &> /dev/null; then
+    WS_VERSION=$(wt --version 2>/dev/null || echo "installed")
     echo -e "${GREEN}════════════════════════════════════════════════════════════${NC}"
     echo -e "${GREEN}  ✅ Installation complete!${NC}"
     echo -e "${GREEN}════════════════════════════════════════════════════════════${NC}"
     echo ""
+    echo -e "Version: ${CYAN}$WS_VERSION${NC}"
+    echo ""
     echo -e "Get started:"
-    echo -e "  ${CYAN}wt help${NC}              # Show all commands"
-    echo -e "  ${CYAN}wt list${NC}              # List worktrees in current repo"
-    echo -e "  ${CYAN}wt create myfeature${NC}  # Create a new worktree"
-    echo -e "  ${CYAN}wt switch myfeature${NC}  # Set up and open worktree"
+    echo -e "  ${CYAN}wt help${NC}                        # Show all commands"
+    echo -e "  ${CYAN}wt list${NC}                        # List worktrees in current repo"
+    echo -e "  ${CYAN}wt create myfeature${NC}            # Create a new worktree"
+    echo -e "  ${CYAN}wt create myfeature --from dev${NC} # Create from a base branch"
+    echo -e "  ${CYAN}wt switch myfeature${NC}            # Set up and open worktree"
     echo ""
 else
-    echo -e "${RED}❌ Installation may have failed. Please check the output above.${NC}"
-    exit 1
+    echo -e "${YELLOW}⚠️  'wt' command not found in PATH${NC}"
+    echo ""
+    echo "You may need to add the global bin directory to your PATH."
+    echo ""
+    if [ "$PKG_MGR" = "pnpm" ]; then
+        echo -e "For pnpm, run:"
+        echo -e "  ${CYAN}pnpm setup${NC}"
+        echo ""
+    fi
+    echo "Then restart your terminal or run:"
+    echo -e "  ${CYAN}source ~/.zshrc${NC}  # or ~/.bashrc"
 fi
