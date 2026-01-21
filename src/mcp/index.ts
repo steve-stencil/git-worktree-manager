@@ -50,6 +50,10 @@ const TOOLS = [
           type: 'string',
           description: 'Optional: branch to checkout (default: creates new branch)',
         },
+        from: {
+          type: 'string',
+          description: 'Optional: base branch to create from (e.g., "develop"). Will fetch and use origin/<branch>.',
+        },
         cwd: {
           type: 'string',
           description: 'Working directory',
@@ -138,13 +142,19 @@ async function handleToolCall(
         const nameSchema = z.string().min(1);
         const parsedName = nameSchema.parse(args.name);
         const branch = typeof args.branch === 'string' ? args.branch : undefined;
+        const from = typeof args.from === 'string' ? args.from : undefined;
 
-        const worktree = await createWorktree({ name: parsedName, branch, cwd });
+        const result = await createWorktree({ name: parsedName, branch, from, cwd });
         return {
           content: [
             {
               type: 'text',
-              text: JSON.stringify({ success: true, worktree }, null, 2),
+              text: JSON.stringify({
+                success: true,
+                worktree: result.worktree,
+                fetched: result.fetched,
+                baseBranch: result.baseBranch,
+              }, null, 2),
             },
           ],
         };

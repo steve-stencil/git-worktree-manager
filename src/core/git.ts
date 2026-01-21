@@ -271,3 +271,43 @@ export async function isGitIgnored(cwd: string, path: string): Promise<boolean> 
     return false;
   }
 }
+
+/**
+ * Fetch from a remote.
+ *
+ * @param cwd - Working directory (must be in a git repo)
+ * @param remote - Remote name (default: "origin")
+ * @returns void
+ */
+export async function fetchRemote(cwd: string, remote = 'origin'): Promise<void> {
+  const git = createGit(cwd);
+
+  try {
+    await git.fetch(remote);
+  } catch (error) {
+    throw wrapError(error, `Failed to fetch from ${remote}`);
+  }
+}
+
+/**
+ * Check if a remote branch exists.
+ *
+ * @param cwd - Working directory (must be in a git repo)
+ * @param branch - Branch name (without remote prefix)
+ * @param remote - Remote name (default: "origin")
+ * @returns true if the remote branch exists
+ */
+export async function remoteBranchExists(
+  cwd: string,
+  branch: string,
+  remote = 'origin'
+): Promise<boolean> {
+  const git = createGit(cwd);
+
+  try {
+    const result = await git.raw(['ls-remote', '--heads', remote, branch]);
+    return result.trim().length > 0;
+  } catch {
+    return false;
+  }
+}

@@ -23,6 +23,7 @@ import {
   getCurrentBranch,
   branchExists,
   createGit,
+  fetchRemote,
 } from './git.js';
 
 /**
@@ -135,10 +136,23 @@ export async function getWorktreePath(cwd: string, name: string): Promise<string
 }
 
 /**
- * Create a new worktree.
+ * Result from creating a worktree, includes fetch status.
  */
-export async function createWorktree(options: CreateWorktreeOptions): Promise<WorktreeInfo> {
-  const { name, branch, newBranch, cwd = process.cwd() } = options;
+export type CreateWorktreeResult = {
+  worktree: WorktreeInfo;
+  fetched: boolean;
+  baseBranch: string | null;
+};
+
+/**
+ * Create a new worktree.
+ *
+ * When a `from` branch is specified, the new worktree branch will be based on
+ * `origin/<from>` to ensure it's always using the latest remote state.
+ * By default, fetches from remote first (use `noFetch: true` to skip).
+ */
+export async function createWorktree(options: CreateWorktreeOptions): Promise<CreateWorktreeResult> {
+  const { name, branch, newBranch, from, noFetch = false, cwd = process.cwd() } = options;
 
   validateWorktreeName(name);
 
@@ -151,18 +165,43 @@ export async function createWorktree(options: CreateWorktreeOptions): Promise<Wo
   }
 
   const git = createGit(mainWorktree);
+  let fetched = false;
+  let baseBranch: string | null = null;
+
+  // Fetch from remote if we have a base branch and noFetch is false
+  if (from && !noFetch) {
+    try {
+      await fetchRemote(mainWorktree);
+      fetched = true;
+    } catch {
+      // Fetch failed, continue without it (might be offline)
+      fetched = false;
+    }
+  }
 
   try {
     if (newBranch) {
-      // Create with new branch
-      await git.raw(['worktree', 'add', '-b', newBranch, worktreePath]);
+      // Create with explicit new branch name
+      if (from) {
+        // Base on remote branch
+        baseBranch = `origin/${from}`;
+        await git.raw(['worktree', 'add', '-b', newBranch, worktreePath, baseBranch]);
+      } else {
+        await git.raw(['worktree', 'add', '-b', newBranch, worktreePath]);
+      }
     } else if (branch) {
       // Checkout existing branch
       await git.raw(['worktree', 'add', worktreePath, branch]);
     } else {
       // Create with default new branch name
       const defaultBranch = `worktree/${name}`;
-      await git.raw(['worktree', 'add', '-b', defaultBranch, worktreePath]);
+      if (from) {
+        // Base on remote branch
+        baseBranch = `origin/${from}`;
+        await git.raw(['worktree', 'add', '-b', defaultBranch, worktreePath, baseBranch]);
+      } else {
+        await git.raw(['worktree', 'add', '-b', defaultBranch, worktreePath]);
+      }
     }
   } catch (error) {
     throw new GitCommandError(
@@ -177,7 +216,7 @@ export async function createWorktree(options: CreateWorktreeOptions): Promise<Wo
     throw new WorktreeNotFoundError(name);
   }
 
-  return worktree;
+  return { worktree, fetched, baseBranch };
 }
 
 /**
