@@ -36,6 +36,8 @@ export type Config = {
   baseApiPort: number;
   /** Base port for web servers (default: 5173) */
   baseWebPort: number;
+  /** Default base branch for new worktrees (default: undefined, uses current HEAD) */
+  baseBranch?: string;
 };
 
 /**
@@ -45,6 +47,7 @@ export const DEFAULT_CONFIG: Config = {
   editorCmd: 'cursor',
   baseApiPort: 4000,
   baseWebPort: 5173,
+  baseBranch: undefined,
 };
 
 /**
@@ -57,6 +60,10 @@ export type CreateWorktreeOptions = {
   branch?: string;
   /** Create a new branch with this name */
   newBranch?: string;
+  /** Base branch to create the new branch from (e.g., "develop") */
+  from?: string;
+  /** Skip fetching from remote before creating */
+  noFetch?: boolean;
   /** Working directory to run from */
   cwd?: string;
 };
@@ -162,6 +169,7 @@ export function isConfig(value: unknown): value is Config {
   return (
     typeof obj.editorCmd === 'string' &&
     typeof obj.baseApiPort === 'number' &&
-    typeof obj.baseWebPort === 'number'
+    typeof obj.baseWebPort === 'number' &&
+    (obj.baseBranch === undefined || typeof obj.baseBranch === 'string')
   );
 }

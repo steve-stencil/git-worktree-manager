@@ -96,21 +96,21 @@ describe('worktree (integration tests)', () => {
 
   describe('createWorktree', () => {
     it('should create worktree with default branch', async () => {
-      const worktree = await createWorktree({ name: 'feature', cwd: repoDir });
+      const result = await createWorktree({ name: 'feature', cwd: repoDir });
 
-      expect(worktree.name).toBe('feature');
-      expect(worktree.branch).toBe('worktree/feature');
-      expect(existsSync(worktree.path)).toBe(true);
+      expect(result.worktree.name).toBe('feature');
+      expect(result.worktree.branch).toBe('worktree/feature');
+      expect(existsSync(result.worktree.path)).toBe(true);
     });
 
     it('should create worktree with custom new branch', async () => {
-      const worktree = await createWorktree({
+      const result = await createWorktree({
         name: 'feature',
         newBranch: 'feat/custom',
         cwd: repoDir,
       });
 
-      expect(worktree.branch).toBe('feat/custom');
+      expect(result.worktree.branch).toBe('feat/custom');
     });
 
     it('should throw WorktreeExistsError for duplicate', async () => {
@@ -136,8 +136,8 @@ describe('worktree (integration tests)', () => {
 
   describe('removeWorktree', () => {
     it('should remove worktree', async () => {
-      const worktree = await createWorktree({ name: 'feature', cwd: repoDir });
-      const path = worktree.path;
+      const result = await createWorktree({ name: 'feature', cwd: repoDir });
+      const path = result.worktree.path;
 
       await removeWorktree({ name: 'feature', cwd: repoDir });
 
@@ -158,14 +158,14 @@ describe('worktree (integration tests)', () => {
     });
 
     it('should create branch if detached', async () => {
-      const worktree = await createWorktree({ name: 'feature', cwd: repoDir });
-      const git = simpleGit(worktree.path);
+      const result = await createWorktree({ name: 'feature', cwd: repoDir });
+      const git = simpleGit(result.worktree.path);
 
       // Create detached HEAD
       const commit = await git.revparse(['HEAD']);
       await git.checkout(commit.trim());
 
-      const branch = await fixDetachedHead(worktree.path, 'feature');
+      const branch = await fixDetachedHead(result.worktree.path, 'feature');
       expect(branch).toBe('worktree/feature');
     });
   });

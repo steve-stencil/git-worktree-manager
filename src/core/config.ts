@@ -91,6 +91,11 @@ export function parseConfigFile(content: string, filePath: string): Partial<Conf
         config.baseWebPort = port;
         break;
       }
+      case 'BASE_BRANCH':
+        if (value.trim()) {
+          config.baseBranch = value.trim();
+        }
+        break;
       // Ignore unknown keys (forward compatibility)
     }
   }
@@ -164,6 +169,9 @@ export function mergeConfigs(...configs: Partial<Config>[]): Config {
     }
     if (config.baseWebPort !== undefined) {
       result.baseWebPort = config.baseWebPort;
+    }
+    if (config.baseBranch !== undefined) {
+      result.baseBranch = config.baseBranch;
     }
   }
 

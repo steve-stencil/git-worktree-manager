@@ -6,11 +6,14 @@
 
 import { createWorktree, getWorktreePath, getWorktreePortOffset } from '../../core/worktree.js';
 import { findMainWorktree } from '../../core/git.js';
+import { loadConfig } from '../../core/config.js';
 import { executeHookSafe, hasHooks, type HookPayload } from '../../core/hooks.js';
 import { printHeader, printSection, printSuccess, printError, printWarning, colors } from '../formatter.js';
 
 type CreateOptions = {
   noHooks?: boolean;
+  from?: string;
+  noFetch?: boolean;
 };
 
 /**
@@ -25,31 +28,57 @@ export async function createCommand(
   if (!name) {
     printError('Please provide a worktree name');
     console.log('');
-    console.log('Usage: wt create <name> [branch] [--no-hooks]');
+    console.log('Usage: wt create <name> [branch] [options]');
     console.log('');
     console.log('Arguments:');
     console.log("  name    Short name for the worktree (e.g., 'feature-x', 'bugfix')");
     console.log('  branch  Optional: branch to checkout (default: creates new branch)');
     console.log('');
     console.log('Options:');
-    console.log('  --no-hooks  Skip running post-create hooks');
+    console.log('  --from <branch>  Base branch to create from (e.g., --from develop)');
+    console.log('  --no-fetch       Skip fetching from remote before creating');
+    console.log('  --no-hooks       Skip running post-create hooks');
+    console.log('');
+    console.log('Config:');
+    console.log('  Set BASE_BRANCH=develop in .wtconfig to always use develop as the base');
     process.exit(1);
   }
 
   const mainWorktree = await findMainWorktree(cwd);
   const worktreePath = await getWorktreePath(cwd, name);
+  const config = await loadConfig(mainWorktree);
+
+  // Determine base branch: CLI option > config > undefined (use current HEAD)
+  const baseBranch = options.from ?? config.baseBranch;
 
   printHeader(`Creating Worktree: ${name}`);
 
   console.log(`📁 Main project: ${mainWorktree}`);
   console.log(`📁 New worktree: ${worktreePath}`);
+  if (baseBranch) {
+    console.log(`🌿 Base branch: origin/${baseBranch}`);
+  }
   console.log('');
 
   // Step 1: Create the worktree
   printSection('Step 1: Creating Worktree');
-  const worktree = await createWorktree({ name, branch, cwd });
-  console.log(`  ${colors.success(`✓ Worktree created at ${worktree.path}`)}`);
-  console.log(`  ${colors.success(`✓ Branch: ${worktree.branch}`)}`);
+
+  const result = await createWorktree({
+    name,
+    branch,
+    from: baseBranch,
+    noFetch: options.noFetch,
+    cwd,
+  });
+
+  if (result.fetched) {
+    console.log(`  ${colors.success('✓ Fetched latest from remote')}`);
+  }
+  console.log(`  ${colors.success(`✓ Worktree created at ${result.worktree.path}`)}`);
+  console.log(`  ${colors.success(`✓ Branch: ${result.worktree.branch}`)}`);
+  if (result.baseBranch) {
+    console.log(`  ${colors.success(`✓ Based on: ${result.baseBranch}`)}`);
+  }
 
   // Step 2: Execute repo-specific hooks
   if (!options.noHooks) {
@@ -59,20 +88,20 @@ export async function createCommand(
       const offset = await getWorktreePortOffset(cwd, name);
       const payload: HookPayload = {
         worktreeName: name,
-        worktreePath: worktree.path,
+        worktreePath: result.worktree.path,
         mainWorktreePath: mainWorktree,
         isMain: false,
         portOffset: offset,
       };
 
       console.log('');
-      const result = await executeHookSafe('post-create', payload, mainWorktree);
+      const hookResult = await executeHookSafe('post-create', payload, mainWorktree);
       console.log('');
 
-      if (result.executed && result.exitCode === 0) {
+      if (hookResult.executed && hookResult.exitCode === 0) {
         console.log(`  ${colors.success('✓ Hooks completed successfully')}`);
-      } else if (result.executed) {
-        printWarning(`Hook exited with code ${result.exitCode}`);
+      } else if (hookResult.executed) {
+        printWarning(`Hook exited with code ${hookResult.exitCode}`);
       }
     } else {
       console.log(colors.dim('  No hooks found (scripts/worktree-hooks.sh)'));
