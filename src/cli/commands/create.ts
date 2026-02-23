@@ -13,6 +13,7 @@ import { printHeader, printSection, printSuccess, printError, printWarning, colo
 type CreateOptions = {
   noHooks?: boolean;
   from?: string;
+  branch?: string;
   noFetch?: boolean;
 };
 
@@ -35,9 +36,10 @@ export async function createCommand(
     console.log('  branch  Optional: branch to checkout (default: creates new branch)');
     console.log('');
     console.log('Options:');
-    console.log('  --from <branch>  Base branch to create from (e.g., --from develop)');
-    console.log('  --no-fetch       Skip fetching from remote before creating');
-    console.log('  --no-hooks       Skip running post-create hooks');
+    console.log('  --from <branch>    Base branch to create from (e.g., --from develop)');
+    console.log('  --branch <name>    Explicit new branch name (e.g., feature/issue-42-my-feature)');
+    console.log('  --no-fetch         Skip fetching from remote before creating');
+    console.log('  --no-hooks         Skip running post-create hooks');
     console.log('');
     console.log('Config:');
     console.log('  Set BASE_BRANCH=develop in .wtconfig to always use develop as the base');
@@ -55,6 +57,9 @@ export async function createCommand(
 
   console.log(`📁 Main project: ${mainWorktree}`);
   console.log(`📁 New worktree: ${worktreePath}`);
+  if (options.branch) {
+    console.log(`🌿 New branch: ${options.branch}`);
+  }
   if (baseBranch) {
     console.log(`🌿 Base branch: origin/${baseBranch}`);
   }
@@ -66,6 +71,7 @@ export async function createCommand(
   const result = await createWorktree({
     name,
     branch,
+    newBranch: options.branch,
     from: baseBranch,
     noFetch: options.noFetch,
     cwd,
@@ -76,6 +82,9 @@ export async function createCommand(
   }
   console.log(`  ${colors.success(`✓ Worktree created at ${result.worktree.path}`)}`);
   console.log(`  ${colors.success(`✓ Branch: ${result.worktree.branch}`)}`);
+  if (options.branch) {
+    console.log(`  ${colors.success(`✓ Custom branch name applied`)}`);
+  }
   if (result.baseBranch) {
     console.log(`  ${colors.success(`✓ Based on: ${result.baseBranch}`)}`);
   }
