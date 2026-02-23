@@ -36,13 +36,14 @@ program
   .aliases(['new', 'c'])
   .description('Create a new worktree')
   .option('--from <branch>', 'Base branch to create from (e.g., develop)')
+  .option('--branch <name>', 'Create new branch with this name (e.g., feature/issue-42-my-feature)')
   .option('--no-fetch', 'Skip fetching from remote before creating')
   .option('--no-hooks', 'Skip running post-create hooks')
   .action(
     async (
       name: string,
       branch: string | undefined,
-      options: { from?: string; noFetch?: boolean; noHooks?: boolean }
+      options: { from?: string; branch?: string; noFetch?: boolean; noHooks?: boolean }
     ) => {
       await runCommand(() => createCommand(name, branch, options, process.cwd()));
     }
