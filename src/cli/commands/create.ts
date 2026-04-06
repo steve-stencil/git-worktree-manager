@@ -11,10 +11,10 @@ import { executeHookSafe, hasHooks, type HookPayload } from '../../core/hooks.js
 import { printHeader, printSection, printSuccess, printError, printWarning, colors } from '../formatter.js';
 
 type CreateOptions = {
-  noHooks?: boolean;
+  hooks: boolean;
   from?: string;
   branch?: string;
-  noFetch?: boolean;
+  fetch: boolean;
 };
 
 /**
@@ -73,7 +73,7 @@ export async function createCommand(
     branch,
     newBranch: options.branch,
     from: baseBranch,
-    noFetch: options.noFetch,
+    noFetch: !options.fetch,
     cwd,
   });
 
@@ -90,7 +90,7 @@ export async function createCommand(
   }
 
   // Step 2: Execute repo-specific hooks
-  if (!options.noHooks) {
+  if (options.hooks) {
     printSection('Step 2: Running Repo Hooks');
 
     if (hasHooks(mainWorktree)) {

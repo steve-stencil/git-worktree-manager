@@ -11,7 +11,7 @@ import { printHeader, printSection, printSuccess, printError, printWarning, colo
 
 type RemoveOptions = {
   force?: boolean;
-  noHooks?: boolean;
+  hooks: boolean;
 };
 
 /**
@@ -42,7 +42,7 @@ export async function removeCommand(
     console.log('');
 
     // Step 1: Execute pre-remove hooks for cleanup
-    if (!options.noHooks) {
+    if (options.hooks) {
       printSection('Step 1: Running Cleanup Hooks');
 
       if (hasHooks(mainWorktree)) {

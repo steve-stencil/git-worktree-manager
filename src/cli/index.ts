@@ -12,6 +12,7 @@ import { removeCommand } from './commands/remove.js';
 import { statusCommand } from './commands/status.js';
 import { portsCommand } from './commands/ports.js';
 import { cdCommand } from './commands/cd.js';
+import { shellInitCommand } from './commands/shell-init.js';
 import { printError } from './formatter.js';
 import { isWorktreeError } from '../core/errors.js';
 import { VERSION } from '../index.js';
@@ -43,7 +44,7 @@ program
     async (
       name: string,
       branch: string | undefined,
-      options: { from?: string; branch?: string; noFetch?: boolean; noHooks?: boolean }
+      options: { from?: string; branch?: string; fetch: boolean; hooks: boolean }
     ) => {
       await runCommand(() => createCommand(name, branch, options, process.cwd()));
     }
@@ -55,7 +56,7 @@ program
   .description('Set up worktree and open in editor')
   .option('--no-editor', 'Skip opening editor')
   .option('--no-hooks', 'Skip running post-switch hooks')
-  .action(async (name: string, options: { noEditor?: boolean; noHooks?: boolean }) => {
+  .action(async (name: string, options: { editor: boolean; hooks: boolean }) => {
     await runCommand(() => switchCommand(name, options, process.cwd()));
   });
 
@@ -65,7 +66,7 @@ program
   .description('Remove a worktree')
   .option('-f, --force', 'Force removal')
   .option('--no-hooks', 'Skip running pre-remove hooks')
-  .action(async (name: string, options: { force?: boolean; noHooks?: boolean }) => {
+  .action(async (name: string, options: { force?: boolean; hooks: boolean }) => {
     await runCommand(() => removeCommand(name, options, process.cwd()));
   });
 
@@ -90,6 +91,13 @@ program
   .description('Print path to worktree (use: cd $(wt cd name))')
   .action(async (name: string) => {
     await runCommand(() => cdCommand(name, process.cwd()));
+  });
+
+program
+  .command('shell-init')
+  .description('Output shell wrapper function (add to .zshrc/.bashrc: eval "$(wt shell-init)")')
+  .action(() => {
+    shellInitCommand();
   });
 
 // Check for --mcp flag to start MCP server instead

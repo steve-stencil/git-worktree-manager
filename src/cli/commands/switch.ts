@@ -10,6 +10,9 @@
  */
 
 import { spawn } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { getWorktreeByName, fixDetachedHead, getWorktreePortOffset } from '../../core/worktree.js';
 import { findMainWorktree } from '../../core/git.js';
 import { loadConfig } from '../../core/config.js';
@@ -18,8 +21,8 @@ import { printHeader, printSection, printWarning, printError, colors } from '../
 import { WorktreeNotFoundError } from '../../core/errors.js';
 
 type SwitchOptions = {
-  noEditor?: boolean;
-  noHooks?: boolean;
+  editor: boolean;
+  hooks: boolean;
 };
 
 /**
@@ -60,7 +63,7 @@ export async function switchCommand(
   }
 
   // Step 2: Execute repo-specific hooks
-  if (!options.noHooks) {
+  if (options.hooks) {
     printSection('Step 2: Running Repo Hooks');
 
     if (hasHooks(mainWorktree)) {
@@ -91,7 +94,7 @@ export async function switchCommand(
   }
 
   // Step 3: Open editor
-  if (!options.noEditor) {
+  if (options.editor) {
     printSection('Step 3: Opening Editor');
     const success = await openEditor(config.editorCmd, worktree.path);
     if (success) {
@@ -101,6 +104,10 @@ export async function switchCommand(
       console.log(colors.dim(`  Set EDITOR_CMD in ~/.wtconfig or install ${config.editorCmd}`));
     }
   }
+
+  // Write worktree path for shell wrapper to pick up
+  const cdFile = join(tmpdir(), '.wt-switch-path');
+  writeFileSync(cdFile, worktree.path, 'utf-8');
 
   // Done!
   console.log('');
